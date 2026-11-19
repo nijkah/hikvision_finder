@@ -1,109 +1,142 @@
 # Hikvision Finder
 
-Python 표준 라이브러리만 사용하는 **읽기 전용 Hikvision 장치 검색 CLI**입니다.
-SADP 앱을 설치하지 않고 UDP 검색 요청으로 카메라·PoE 스위치 등의 MAC, IP,
-모델, DHCP 여부, 활성화 상태를 확인합니다. IP 대역을 하나씩 스캔하지 않습니다.
+A read-only, dependency-free Python CLI for discovering Hikvision devices on a
+local network without installing the SADP application or scanning every IP address.
 
-## 적용 범위
+It sends SADP UDP discovery probes and displays device-reported MAC addresses,
+IPv4 addresses, models, serial numbers, DHCP status, and activation status.
 
-- Hikvision SADP UDP inquiry에 응답하는 장치용이며 모든 제조사에 공통인 검색기는 아닙니다.
-- 실제 Hikvision 카메라와 PoE 스위치에서 확인한 방식입니다. 모든 모델/펌웨어 지원을 보장하지 않습니다.
-- PC와 장치는 검색 멀티캐스트가 전달되는 같은 로컬망/VLAN에 있어야 합니다.
-  라우터, 무선 격리, 포트 격리, NVR 전용 PoE망 때문에 응답이 차단될 수 있습니다.
-- DHCP가 꺼져 있거나 미활성인 장치도 응답할 수 있습니다. 검색 성공이 웹/RTSP 접속 성공을 뜻하지는 않습니다.
-- IP 할당, DHCP 변경, 활성화, 비밀번호 변경, ARP 변경은 자동 수행하지 않습니다.
+## Scope and limitations
 
-## 실행
+- Supports devices that respond to Hikvision SADP UDP inquiries. This is **not a
+  universal discovery protocol for all camera manufacturers**.
+- The discovery approach has been verified with Hikvision cameras and PoE switches.
+  Compatibility with every model and firmware version is not guaranteed.
+- The computer and devices must share a local network/VLAN that permits discovery
+  multicast traffic. Routers, Wi-Fi isolation, switch port isolation, firewalls, and
+  private NVR PoE networks can prevent discovery.
+- Devices may respond even when DHCP is disabled or they are not activated.
+  Discovery does not guarantee that their web or RTSP services are reachable.
+- The tool does **not** assign IP addresses, change DHCP settings, activate devices,
+  set passwords, or modify your computer's ARP table.
 
-Python 3.8 이상. pip 패키지는 필요 없습니다. macOS에서 실장비 검증했으며,
-Linux는 `ip` 명령이 필요합니다. Windows 등에서는 `--local-ip`를 사용하세요
-(macOS 외 환경은 실장비 검증하지 않았습니다).
+## Requirements
+
+- Python 3.8 or newer; no third-party Python packages.
+- An IPv4 address on the network adapter connected to the devices.
+- macOS supports `--interface` through `ipconfig`.
+- Linux supports `--interface` through the `ip` command.
+- On Windows or other platforms, use `--local-ip`.
+
+Live device discovery has been verified on macOS. Other platforms have not been
+validated with physical devices.
+
+## Quick start
 
 ```bash
 git clone https://github.com/nijkah/hikvision_finder.git
 cd hikvision_finder
 
-# macOS: 유선 어댑터 이름 확인
+# macOS: identify your wired adapter
 networksetup -listallhardwareports
 
-# en4는 예시이며 실제 유선 인터페이스 이름을 지정
+# Replace en4 with your actual interface name
 python3 hikvision_finder.py --interface en4
 
-# MAC으로 대상 필터링 (아래 MAC은 가상 예시)
+# Filter by a device MAC (this example MAC is fictional)
 python3 hikvision_finder.py -i en4 --mac 02:00:00:00:00:01
 
-# 부팅 중인 장치에 더 긴 검색 시간 제공
+# Allow more time for a camera that is still booting
 python3 hikvision_finder.py -i en4 --timeout 30 --interval 3
 
-# 인터페이스 이름 대신 내 PC 유선 IPv4 지정 (카메라 주소가 아님)
+# Use YOUR COMPUTER'S adapter IPv4 address, not the camera address
 python3 hikvision_finder.py --local-ip 192.168.1.100
 
-# Linux
+# Linux, with machine-readable output
 python3 hikvision_finder.py -i eth0 --json
 ```
 
-`--json` 출력은 `local_ip`, `devices`, `duplicate_ips`를 포함합니다.
-장치는 MAC 기준으로 중복 제거하며, 동일 IP를 여러 MAC이 사용하면 경고합니다.
-`--mac` 필터를 사용해도 IP 충돌 검사는 전체 응답을 기준으로 수행합니다.
-응답에 없는 DHCP/활성화 값은 `unknown` (JSON에서는 `null`)입니다.
+`--json` produces an object containing `local_ip`, `devices`, and `duplicate_ips`.
+Responses are deduplicated by MAC. Multiple MACs reporting the same IP trigger a
+duplicate-IP warning. Duplicate detection uses all responses, even with `--mac`.
+Missing DHCP or activation values appear as `unknown` in the table and `null` in JSON.
 
-종료 코드: `0` 장치 발견, `1` 일치하는 응답 없음, `2` 입력/네트워크 오류,
-`130` 사용자 중단. 응답 없음은 장치 부재의 확정 증거가 아닙니다.
+Exit codes:
 
-## 새 카메라 설정 순서
+| Code | Meaning |
+| --- | --- |
+| 0 | At least one matching device responded |
+| 1 | No matching response received |
+| 2 | Invalid input or network/interface error |
+| 130 | Interrupted by the user |
 
-1. 카메라에 PoE 또는 적절한 별도 전원을 공급하고 PC를 같은 망에 연결합니다.
-2. 위 스크립트로 검색하고 라벨의 MAC/시리얼과 대조합니다.
-3. 카메라 IP와 PC의 서브넷, IP 중복 여부를 확인합니다.
-4. 카메라 웹페이지에서 필요하면 관리자 비밀번호를 만들어 활성화하고 DHCP를 켭니다.
-5. DHCP 서버가 있는 망에서 다시 검색해 **동일 MAC**의 새 IP를 확인합니다.
+No response is not definitive proof that a device is absent.
 
-DHCP가 꺼져 있어도 초기 고정 IP를 가질 수 있습니다. `169.254.x.x`는 필수 주소가
-아니므로 이전 카메라의 주소를 새 장치에 그대로 적용하지 마세요.
-내부망과 인터넷 Wi-Fi를 동시에 사용할 때는 macOS 네트워크 서비스 순서에서
-Wi-Fi를 우선하도록 설정할 수 있습니다.
+## Setting up a new camera
 
-### macOS에서 초기 IP가 중복되는 경우
+1. Power the camera through PoE or an appropriate separate power supply, and
+   connect your computer to the same network.
+2. Run discovery and match the MAC or serial number against the camera's label.
+3. Check the camera's subnet and any duplicate-IP warnings.
+4. Open its web interface. If necessary, create an administrator password to
+   activate the camera, then enable DHCP in its network settings.
+5. On a network with a DHCP server, run discovery again and locate the **same MAC**
+   to find its newly assigned address.
 
-PC와 카메라가 같은 IPv4 서브넷에 있고 검색으로 대상 MAC을 확인했다면,
-Mac에서 해당 IP의 목적지 MAC을 임시 지정해 접속할 수 있습니다.
-**이것은 카메라에 IP를 할당하는 명령이 아닙니다.** 다른 프로그램의 해당 IP 접속에도
-영향을 주므로 작업 후 반드시 제거하세요. 지속적인 통신 문제가 있으면 카메라를
-별도 설정용 PoE 스위치/인젝터로 분리해 설정하세요.
+A camera with DHCP disabled may already have a default static IP. A `169.254.x.x`
+address is not required; do not reuse a previous camera's address without discovery.
+When using internal wired networking alongside internet-connected Wi-Fi, macOS
+network service ordering can keep Wi-Fi as the preferred internet connection.
 
-아래 주소와 MAC은 예시입니다. 반드시 실제 검색 결과로 바꾸세요.
+### Duplicate initial IP addresses on macOS
+
+If your computer and camera are in the same IPv4 subnet, and discovery confirms the
+target MAC, you can temporarily direct your Mac's traffic for the shared IP to that
+MAC. **This does not assign an IP address to the camera.** It affects other programs
+connecting to that IP too, so remove the entry after setup.
+
+Replace the example IP, fictional MAC, and interface below with your actual values:
 
 ```bash
 sudo arp -s 192.168.1.64 02:00:00:00:00:01 ifscope en4
 arp -n 192.168.1.64
 open http://192.168.1.64
 
-# 웹에서 활성화 및 DHCP 저장 후, 또는 작업 취소 시 임시 지정 제거
+# After activation and DHCP setup, or when abandoning the setup
 sudo arp -d 192.168.1.64 ifscope en4
 
-# 같은 MAC의 새 IP 조회
+# Find the new address using the same MAC
 python3 hikvision_finder.py -i en4 --mac 02:00:00:00:00:01
 ```
 
-## 검색 원리와 문제 해결
+If communication remains unreliable, isolate the camera on a separate setup PoE
+switch/injector and configure it there before reconnecting it to the shared network.
 
-선택한 로컬 IPv4 인터페이스에서 `239.255.255.250:37020`으로 XML `Probe`
-(`Types=inquiry`)를 반복 전송하고 UDP 37020의 `ProbeMatch` 응답을 파싱합니다.
-관리자 권한은 일반적으로 필요하지 않으며 카메라 자격 증명도 사용하지 않습니다.
+## How it works
 
-- 인터페이스에 IPv4가 없으면 전원·링크·PC 주소 설정부터 확인하세요.
-- DHCP 서버가 없는 직결 환경에서는 IPv4 주소가 아직 없을 수 있습니다.
-- macOS 로컬 네트워크 권한 및 방화벽의 UDP 37020/멀티캐스트 허용 상태를 확인하세요.
-- 포트 바인딩 오류가 나면 다른 SADP/검색 프로그램을 종료하고 재시도하세요.
-- Wi-Fi로 잘못 검색하지 않도록 `--interface` 또는 `--local-ip`를 명시합니다.
-- 새 카메라 부팅을 기다린 뒤 `--timeout 30`으로 다시 검색하세요.
-- 검색에는 카메라 외 Hikvision 스위치/NVR도 포함될 수 있으므로 모델명을 확인하세요.
-- 결과에는 장치 MAC/시리얼/IP가 들어 있으므로 공개 이슈에 올릴 때는 필요한 값만 남기세요.
+The tool sends XML `Probe` messages with `Types=inquiry` to
+`239.255.255.250:37020` through the selected local IPv4 interface. It listens on
+UDP 37020 and parses `ProbeMatch` replies. Probes repeat until the timeout expires.
+Administrator privileges and camera credentials are normally unnecessary.
 
-## 테스트
+## Troubleshooting
+
+- **No adapter IPv4:** check power, link status, and your computer's address settings.
+  Direct connections without a DHCP server may not yet have an IPv4 address.
+- **No responses:** check the VLAN, multicast forwarding, port isolation, and firewall.
+  On macOS, also check local-network permissions for the application running Python.
+- **Port binding error:** close other SADP/discovery programs and try again.
+- **Wrong adapter:** explicitly select the wired interface or its local IPv4 address.
+- **Camera still booting:** wait for startup and retry with `--timeout 30`.
+- **Unexpected devices:** Hikvision switches and NVRs can respond too; check the model.
+- **Sharing output:** results include MACs, serial numbers, and IP addresses. Redact
+  unnecessary identifying information before posting logs publicly.
+
+## Tests
 
 ```bash
 python3 -m unittest -v
 ```
 
-테스트 데이터는 가상 MAC/IP를 사용합니다. 인증정보나 실장비 목록은 저장소에 포함하지 않습니다.
+Tests use fictional MAC/IP values. No credentials or actual device inventories are
+included in this repository.
