@@ -31,30 +31,82 @@ IPv4 addresses, models, serial numbers, DHCP status, and activation status.
 Live device discovery has been verified on macOS. Other platforms have not been
 validated with physical devices.
 
-## Quick start
+## Quick start (macOS)
+
+Connect your powered camera and your Mac's wired adapter to the same network.
+Then follow these three steps. No `pip install` or `sudo` is needed for discovery.
+
+### 1. Download once
 
 ```bash
 git clone https://github.com/nijkah/hikvision_finder.git
 cd hikvision_finder
-
-# macOS: identify your wired adapter
-networksetup -listallhardwareports
-
-# Replace en4 with your actual interface name
-python3 hikvision_finder.py --interface en4
-
-# Filter by a device MAC (this example MAC is fictional)
-python3 hikvision_finder.py -i en4 --mac 02:00:00:00:00:01
-
-# Allow more time for a camera that is still booting
-python3 hikvision_finder.py -i en4 --timeout 30 --interval 3
-
-# Use YOUR COMPUTER'S adapter IPv4 address, not the camera address
-python3 hikvision_finder.py --local-ip 192.168.1.100
-
-# Linux, with machine-readable output
-python3 hikvision_finder.py -i eth0 --json
 ```
+
+### 2. Find your wired adapter
+
+```bash
+networksetup -listallhardwareports
+```
+
+Look for your USB Ethernet/LAN adapter and copy its **Device** value, for example:
+
+```text
+Hardware Port: USB 10/100/1000 LAN
+Device: en4
+```
+
+### 3. Find cameras
+
+Run this from the downloaded `hikvision_finder` folder. Replace `en4` if your
+adapter has a different name:
+
+```bash
+python3 hikvision_finder.py --interface en4
+```
+
+Wait about 10 seconds. Match the **MAC** to the camera's label and read its **IP**.
+`DHCP: yes` means automatic addressing is enabled; `ACTIVE: no` means the camera
+still needs activation. If you see `DUPLICATE IP`, follow the
+[duplicate-IP instructions below](#duplicate-initial-ip-addresses-on-macos).
+
+**Next time:** reconnect the camera, open a terminal in the same folder, and run
+the command in step 3 again. You do not need to download the tool again.
+
+## Optional commands
+
+Find one camera by its label's MAC (replace the fictional example):
+
+```bash
+python3 hikvision_finder.py -i en4 --mac 02:00:00:00:00:01
+```
+
+Search longer while a camera boots:
+
+```bash
+python3 hikvision_finder.py -i en4 --timeout 30
+```
+
+Get JSON output for another script:
+
+```bash
+python3 hikvision_finder.py -i en4 --json
+```
+
+On Windows or when selecting an adapter by address, use **your computer's wired
+IPv4 address**, not the camera's address. Replace this example:
+
+```bash
+python3 hikvision_finder.py --local-ip 192.168.1.100
+```
+
+On Linux, replace `eth0` with your wired interface:
+
+```bash
+python3 hikvision_finder.py -i eth0
+```
+
+## Output reference
 
 `--json` produces an object containing `local_ip`, `devices`, and `duplicate_ips`.
 Responses are deduplicated by MAC. Multiple MACs reporting the same IP trigger a
